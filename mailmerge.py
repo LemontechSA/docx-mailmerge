@@ -73,7 +73,7 @@ class NextRecord(Exception):
 class SkipRecord(Exception):
     pass
 
-class DeleteRecord(Exception):
+class DeleteAncestor(Exception):
     pass
 
 class MergeField(object):
@@ -143,7 +143,7 @@ class MergeField(object):
                 value = self._format_text(value, flag, option)
             if flag in ('\\-'):
                 if not value:
-                    raise DeleteRecord(option)
+                    raise DeleteAncestor(option.strip())
 
         if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
             # TODO format the date according to the locale -- set the locale
@@ -256,9 +256,8 @@ class MergeField(object):
         value = row.get(self.name, "UNKNOWN({})".format(self.instr))
         try:
             value = self._format(value)
-        except DeleteRecord as e:
-            self._delete_parent(e.args[0])
-            return
+        except DeleteAncestor as e:
+            raise
         except Exception as e:
             warnings.warn("Invalid formatting for field <{}> with error <{}>".format(self.instr, e))
             # raise
@@ -286,12 +285,6 @@ class MergeField(object):
             elem.append(self._make_text(text_part))
 
         self.filled_elements.append(elem)
-
-    def _delete_parent(self, path):
-        elem = self._elements_to_add[0]
-        ancestor = elem.xpath('.//ancestor::%s[1]' % path, namespaces=NAMESPACES)
-        if len(ancestor) > 0:
-            ancestor[0].getparent().remove(ancestor[0])
 
     def _make_br(self):
         return Element('{%(w)s}br' % NAMESPACES)
@@ -478,6 +471,14 @@ class MergeData(object):
             except NextRecord:
                 field_element.getparent().remove(field_element)
                 row = self.next_row()
+            except DeleteAncestor as e:
+                self._delete_ancestor(field_element, e.args[0])
+
+    def _delete_ancestor(self, elem, path):
+        fullpath = f'.//ancestor::{path}'
+        ancestors = elem.xpath(fullpath, namespaces=NAMESPACES)
+        deletable = ancestors[-1] if len(ancestors) > 0 else elem
+        deletable.getparent().remove(deletable)
 
     def replace_table_rows(self, body, anchor, rows):
         """ replace the rows of a table with the values from the rows list """

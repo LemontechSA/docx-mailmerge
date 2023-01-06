@@ -60,6 +60,7 @@ DATEFORMAT_MAP = {
     "am/pm": "%p",
     "AM/PM": "%p",
 }
+DATEPARSE_RE = r"(\D*)\d{2}(\d{2})?(\D)\d{2}\3\d{2}(\d{2})?(\D*)(\d{2}:\d{2})?(:\d{2})?(\D*)$"
 
 TAGS_WITH_ID = {
     'wp:docPr': {'name': 'Picture {id}'}
@@ -236,6 +237,9 @@ class MergeField(object):
         if value is None:
             return ''
 
+        if isinstance(value, str):
+            value = self.parse_date(value)
+
         if not isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
             return str(value)
 
@@ -250,6 +254,30 @@ class MergeField(object):
         value = value.strftime(fmt)
         # warnings.warn("Date formatting not yet implemented <{}>".format(option))
         return value
+
+    def parse_date(self, value: str):
+        match = re.match(DATEPARSE_RE, value)
+        if not match:
+            return value
+
+        groups = match.groups()
+        date_parts = ['%Y', '%m', '%d']
+
+        if groups[3] != None:
+            date_parts.reverse()
+        elif groups[1] == None:
+            date_parts[0] = '%y'
+
+        format = f"{groups[0]}{str.join(groups[2], date_parts)}{groups[4]}"
+
+        if groups[5] != None:
+            format += '%H:%M'
+            if groups[6] != None:
+                format += ':%S'
+
+        format += groups[7]
+
+        return datetime.datetime.strptime(value, format)
 
     def fill_data(self, merge_data, row):
         self.filled_elements = []

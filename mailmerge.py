@@ -31,6 +31,9 @@ VALID_SEPARATORS = {
     'continuous_section', 'evenPage_section', 'nextColumn_section', 'nextPage_section', 'oddPage_section'}
 
 NUMBERFORMAT_RE = r"([^0.,'#PN]+)?(P\d+|N\d+|[0.,'#]+%?)([^0.,'#%].*)?"
+NUMBERFORMAT_DETAIL_RE = r"^([^0#])?([0#]+)([^0#])?([0#]*)"
+RUT_RE = r"^(\d+)(-[\d\w])"
+
 DATEFORMAT_RE = "|".join([r"{}+".format(switch) for switch in "yYmMdDhHsS"] + [r"am/pm", r"AM/PM"])
 DATEFORMAT_MAP = {
     "M": "{d.month}",
@@ -60,6 +63,7 @@ DATEFORMAT_MAP = {
     "am/pm": "%p",
     "AM/PM": "%p",
 }
+DATEPARSE_RE = r"(\D*)\d{2}(\d{2})?(\D)\d{2}\3\d{2}(\d{2})?(\D*)(\d{2}:\d{2})?(:\d{2})?(\D*)$"
 
 TAGS_WITH_ID = {
     'wp:docPr': {'name': 'Picture {id}'}
@@ -179,6 +183,16 @@ class MergeField(object):
         return value
 
     def _format_number(self, value, flag, option):
+        if isinstance(value, str):
+            rut_match = re.match(RUT_RE, value)
+            if rut_match:
+                value = rut_match.group(1)
+                option = option + rut_match.group(2)
+            try:
+                value = float(value)
+            except Exception as e:
+                return value
+
         format_match = re.match(NUMBERFORMAT_RE, option)
         if value is None:
             value = 0
@@ -205,29 +219,26 @@ class MergeField(object):
                     format_prefix,
                     value,
                     format_suffix)
-        thousand_info = [
-            ('_', thousand_char)
-            for thousand_char in "',"
-            if thousand_char in format_number] + [('', '')]
-        thousand_flag, thousand_char = thousand_info[0]
-        format_number = format_number.replace(',', '')
-        digits, decimals = (format_number.split('.') + [''])[0:2]
-        zero_digits = len(digits.replace('#', ''))
-        zero_decimals = len(decimals.replace('#', ''))
-        len_decimals_plus_dot = 0 if not decimals else 1 + len(decimals)
-        number_format_text = "{{}}{{:{zero_digits}{thousand_flag}{decimals}f}}{{}}".format(
-            thousand_flag=thousand_flag,
-            zero_digits="0>{}".format(zero_digits + len_decimals_plus_dot) if zero_digits > 1 else "",
-            decimals=".{}".format(len(decimals)))
+
+        number_match = re.match(NUMBERFORMAT_DETAIL_RE, format_number)
+        thousand_sep = number_match.group(1) or ""
+        digits = len(number_match.group(2))
+        padding = '0' if number_match.group(2)[0] == '0' else ' '
+        decimal_sep = number_match.group(3) or ""
+        decimals = len(number_match.group(4))
+
+        number_format_text = "{{:{zero_digits}{thousand_flag}.{decimals}f}}".format(
+            thousand_flag=',' if thousand_sep else '',
+            zero_digits="{}>{}".format(
+                padding, digits + decimals + len(decimal_sep)) if digits > 1 else "",
+            decimals=decimals)
         # print(self.name, "<", option, ">", number_format_text)
         try:
-            result = number_format_text.format(
-                        format_prefix,
-                        value,
-                        format_suffix)
-            if thousand_flag:
-                result = result.replace(thousand_flag, thousand_char)
-            return result
+            result = number_format_text.format(value)
+            result = result.replace(',', 'THOUSANDS').replace('.', 'DECIMALS')
+            result = result.replace('THOUSANDS', thousand_sep).replace(
+                'DECIMALS', decimal_sep)
+            return format_prefix + result + format_suffix
         except Exception as e:
             raise ValueError("Invalid number format <{}> with error <{}>".format(number_format_text, e))
 
@@ -235,6 +246,9 @@ class MergeField(object):
 
         if value is None:
             return ''
+
+        if isinstance(value, str):
+            value = self.parse_date(value)
 
         if not isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
             return str(value)
@@ -250,6 +264,30 @@ class MergeField(object):
         value = value.strftime(fmt)
         # warnings.warn("Date formatting not yet implemented <{}>".format(option))
         return value
+
+    def parse_date(self, value: str):
+        match = re.match(DATEPARSE_RE, value)
+        if not match:
+            return value
+
+        groups = match.groups()
+        date_parts = ['%Y', '%m', '%d']
+
+        if groups[3] != None:
+            date_parts.reverse()
+        elif groups[1] == None:
+            date_parts[0] = '%y'
+
+        format = f"{groups[0]}{str.join(groups[2], date_parts)}{groups[4]}"
+
+        if groups[5] != None:
+            format += '%H:%M'
+            if groups[6] != None:
+                format += ':%S'
+
+        format += groups[7]
+
+        return datetime.datetime.strptime(value, format)
 
     def fill_data(self, merge_data, row):
         self.filled_elements = []

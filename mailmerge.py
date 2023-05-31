@@ -133,12 +133,13 @@ class MergeField(object):
                     raise DeleteAncestor(option.strip())
 
         if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
-            if hasattr(value, 'month') and hasattr(value, 'hour'):
-                value = format_datetime(value, locale=self.locale)
-            elif hasattr(value, 'hour'):
-                value = format_time(value, locale=self.locale)
-            else:
-                value = format_date(value, locale=self.locale)
+            # TODO format the date according to the locale -- set the locale
+            date_formats = []
+            if hasattr(value, 'month'):
+                date_formats.append('%x')
+            if hasattr(value, 'hour'):
+                date_formats.append('%X')
+            value = value.strftime(" ".join(date_formats))
 
         return value
 
@@ -260,7 +261,11 @@ class MergeField(object):
             if groups[6] != None:
                 format += ':%S'
 
-        format += groups[7]
+        if groups[7] != None:
+            format += '.%f'
+
+        if groups[8] != None:
+            format += groups[8]
 
         return datetime.datetime.strptime(value, format)
 

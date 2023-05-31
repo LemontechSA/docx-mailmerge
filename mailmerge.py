@@ -45,7 +45,7 @@ DATEFORMAT_MAP = {
     "AM/PM": "a",
 }
 DATEFORMAT_RE = r"\b(" + '|'.join(DATEFORMAT_MAP.keys()) + r")\b"
-DATEPARSE_RE = r"(\D*)\d{2}(\d{2})?(\D)\d{2}\3\d{2}(\d{2})?(\D*)(\d{2}:\d{2})?(:\d{2})?(\.\d+)?(\D*)$"
+DATEPARSE_RE = r"(\D*)\d{1,2}(\d{2})?(\D)\d{1,2}\3\d{1,2}(\d{2})?(\D*)(\d{1,2}:\d{1,2})?(:\d{1,2})?(\.\d+)?(\D*)$"
 
 TAGS_WITH_ID = {
     'wp:docPr': {'name': 'Picture {id}'}

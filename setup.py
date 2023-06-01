@@ -18,5 +18,5 @@ setup(name='docx-mailmerge2',
       license='MIT',
       py_modules=['mailmerge'],
       zip_safe=False,
-      install_requires=['lxml']
+      install_requires=['lxml', 'babel']
 )

@@ -2,7 +2,7 @@ import warnings
 import shlex
 import re
 import datetime
-# import locale
+from babel.dates import format_datetime
 from zipfile import ZipFile, ZIP_DEFLATED
 from copy import deepcopy
 
@@ -34,36 +34,18 @@ NUMBERFORMAT_RE = r"([^0.,'#PN]+)?(P\d+|N\d+|[0.,'#]+%?)([^0.,'#%].*)?"
 NUMBERFORMAT_DETAIL_RE = r"^([^0#])?([0#]+)([^0#])?([0#]*)"
 RUT_RE = r"^(\d+)(-[\d\w])"
 
-DATEFORMAT_RE = "|".join([r"{}+".format(switch) for switch in "yYmMdDhHsS"] + [r"am/pm", r"AM/PM"])
 DATEFORMAT_MAP = {
-    "M": "{d.month}",
-    "MM": "%m",
-    "MMM": "%b",
-    "MMMM": "%B",
-    "d": "{d.day}",
-    "dd": "%d",
-    "ddd": "%a",
-    "dddd": "%A",
-    "D": "{d.day}",
-    "DD": "%d",
-    "DDD": "%a",
-    "DDDD": "%A",
-    "yy": "%y",
-    "yyyy": "%Y",
-    "YY": "%y",
-    "YYYY": "%Y",
-    "h": "{hour12}",
-    "hh": "%I",
-    "H": "{d.hour}",
-    "HH": "%H",
-    "m": "{d.minute}",
-    "mm": "%M",
-    "s": "{d.second}",
-    "ss": "%S",
-    "am/pm": "%p",
-    "AM/PM": "%p",
+    "ddd": "EEE",
+    "dddd": "EEEE",
+    "DDD": "EEE",
+    "DDDD": "EEEE",
+    "YY": "yy",
+    "YYYY": "yyyy",
+    "am/pm": "a",
+    "AM/PM": "a",
 }
-DATEPARSE_RE = r"(\D*)\d{2}(\d{2})?(\D)\d{2}\3\d{2}(\d{2})?(\D*)(\d{2}:\d{2})?(:\d{2})?(\D*)$"
+DATEFORMAT_RE = r"\b(" + '|'.join(DATEFORMAT_MAP.keys()) + r")\b"
+DATEPARSE_RE = r"(\D*)\d{1,2}(\d{2})?(\D)\d{1,2}\3\d{1,2}(\d{2})?(\D*)(\d{1,2}:\d{1,2})?(:\d{1,2})?(\.\d+)?(\D*)$"
 
 TAGS_WITH_ID = {
     'wp:docPr': {'name': 'Picture {id}'}
@@ -87,7 +69,7 @@ class MergeField(object):
     it contains the field name, and a method to return a list of elements (runs) given the data dictionary
     """
 
-    def __init__(self, parent, name="", key=None, instr=None, instr_tokens=None, nested=False, elements=None, ignore_elements=None):
+    def __init__(self, parent, name="", key=None, instr=None, instr_tokens=None, nested=False, elements=None, ignore_elements=None, locale="en"):
         """ Inits the MergeField class
 
         Args:
@@ -108,6 +90,7 @@ class MergeField(object):
         self.name = name
         if not name and instr_tokens[1:]:
             self.name = instr_tokens[1]
+        self.locale = locale
 
         self._parse_instruction()
 
@@ -253,18 +236,11 @@ class MergeField(object):
         if not isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
             return str(value)
 
-        # set the locale to be used for time
-        # more checking needed before activating
-        # locale.setlocale(locale.LC_TIME, "")
         fmt = re.sub(DATEFORMAT_RE, lambda x:DATEFORMAT_MAP[x[0]], option)
-        fmt_args = {'d': value}
-        if hasattr(value, 'hour'):
-            fmt_args['hour12'] = value.hour % 12
-        fmt = fmt.format(**fmt_args)
-        value = value.strftime(fmt)
-        # warnings.warn("Date formatting not yet implemented <{}>".format(option))
-        return value
+        return format_datetime(value, format=fmt, locale=self.locale)
 
+    # assume either y-m-d or d-m-y. no support for m-d-y
+    # TODO: support m-d-y if locale=='en'
     def parse_date(self, value: str):
         match = re.match(DATEPARSE_RE, value)
         if not match:
@@ -285,7 +261,11 @@ class MergeField(object):
             if groups[6] != None:
                 format += ':%S'
 
-        format += groups[7]
+        if groups[7] != None:
+            format += '.%f'
+
+        if groups[8] != None:
+            format += groups[8]
 
         return datetime.datetime.strptime(value, format)
 
@@ -365,12 +345,13 @@ class MergeData(object):
         "NEXT": NextField,
     }
 
-    def __init__(self, remove_empty_tables=False):
+    def __init__(self, remove_empty_tables=False, locale='en'):
         self._merge_field_map = {} # merge_field.key: MergeField()
         self._merge_field_next_id = 0
         self.duplicate_id_map = {} # tag: {'max': max_id, 'ids': set(existing_ids)}
         self.has_nested_fields = False
         self.remove_empty_tables = remove_empty_tables
+        self.locale = locale
         self._rows = None
         self._current_index = None
 
@@ -465,6 +446,7 @@ class MergeData(object):
             nested=nested,
             instr_tokens=tokens,
             elements=elements,
+            locale=self.locale,
             **kwargs
         )
 
@@ -681,7 +663,7 @@ class MailMerge(object):
 
     """
 
-    def __init__(self, file, remove_empty_tables=False, auto_update_fields_on_open="no"):
+    def __init__(self, file, remove_empty_tables=False, auto_update_fields_on_open="no", locale="en"):
         """
         auto_update_fields_on_open : no, auto, always - auto = only when needed
         """
@@ -689,7 +671,7 @@ class MailMerge(object):
         self.parts = {} # part: ElementTree
         self.settings = None
         self._settings_info = None
-        self.merge_data = MergeData(remove_empty_tables=remove_empty_tables)
+        self.merge_data = MergeData(remove_empty_tables=remove_empty_tables, locale=locale)
         self.remove_empty_tables = remove_empty_tables
         self.auto_update_fields_on_open = auto_update_fields_on_open
 

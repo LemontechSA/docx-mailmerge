@@ -46,6 +46,7 @@ DATEFORMAT_MAP = {
 }
 DATEFORMAT_RE = r"\b(" + '|'.join(DATEFORMAT_MAP.keys()) + r")\b"
 DATEPARSE_RE = r"(\D*)\d{1,2}(\d{2})?(\D)\d{1,2}\3\d{1,2}(\d{2})?(\D*)(\d{1,2}:\d{1,2})?(:\d{1,2})?(\.\d+)?(\D*)$"
+NUMERIC_RE = r"^\d+(\.\d+)?$"
 
 TAGS_WITH_ID = {
     'wp:docPr': {'name': 'Picture {id}'}
@@ -244,7 +245,7 @@ class MergeField(object):
     def parse_date(self, value: str):
         match = re.match(DATEPARSE_RE, value)
         if not match:
-            return value
+            return self.parse_excel_date(value)
 
         groups = match.groups()
         date_parts = ['%Y', '%m', '%d']
@@ -268,6 +269,12 @@ class MergeField(object):
             format += groups[8]
 
         return datetime.datetime.strptime(value, format)
+
+    def parse_excel_date(self, value: str):
+        if not re.match(NUMERIC_RE, value):
+            return value
+
+        return datetime.datetime(1899, 12, 30) + datetime.timedelta(days=float(value))
 
     def fill_data(self, merge_data, row):
         self.filled_elements = []
